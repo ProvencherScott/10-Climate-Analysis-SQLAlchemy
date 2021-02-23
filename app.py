@@ -1,7 +1,4 @@
-#################################################
-# Import Dependencies
-#################################################
-
+#import dependencies:
 import numpy as np
 
 import sqlalchemy
@@ -11,131 +8,98 @@ from sqlalchemy import create_engine, func
 
 from flask import Flask, jsonify
 
-import datetime as dt
-
-#################################################
-# Database Setup
-#################################################
+#engine setup and database reflection:
 engine = create_engine("sqlite:///Resources/hawaii.sqlite")
 
-# reflect an existing database into a new model
 Base = automap_base()
-# reflect the tables
+
 Base.prepare(engine, reflect=True)
 
-# Save reference to the table
 Measurement = Base.classes.measurement
 Station = Base.classes.station
 
-#################################################
-# Flask Setup
-#################################################
+#Flask setup:
 app = Flask(__name__)
 
 
-#################################################
-# Flask Routes
-#################################################
-
+#index - list of routes
 @app.route("/")
 def welcome():
-    """List all available api routes."""
-    return (
-        f"Available Routes:<br>"
-        f"<a href='http://127.0.0.1:5000/api/v1.0/precipitation'>/api/v1.0/precipitation</a><br>"
-        f"<a href='http://127.0.0.1:5000/api/v1.0/stations'>/api/v1.0/stations</a><br>"
-        f"<a href='http://127.0.0.1:5000/api/v1.0/tobs'>/api/v1.0/tobs</a><br>"
-        f"<a href='http://127.0.0.1:5000/api/v1.0/2016-07-29'>/api/v1.0/&lt;start date &gt;</a>            use date format:YYYY-MM-DD <br>"
-        f"<a href='http://127.0.0.1:5000/api/v1.0/2016-07-29/2017-07-29'>/api/v1.0/&lt;start date &gt;/&lt;end date&gt;</a>      use date format:YYYY-MM-DD"
+    return(
+        f"Hawaii Temperature Analysis.<br/>"
+        f"<br/>"
+        f"<b/><u/>Available Routes:</b></u><br/>"
+        f"/api/v1.0/precipitation<br/>"
+        f"/api/v1.0/stations<br/>"
+        f"/api/v1.0/tobs<br/>"
+        f"/api/v1.0/start<br/>"
+        f"/api/v1.0/start/end<br/>"
     )
 
-
+#display as jsonified dictionary the total precipitation per day for the last year's worth of data
 @app.route("/api/v1.0/precipitation")
-def precipitation():
-    # Create our session (link) from Python to the DB
+def rain():
+
     session = Session(engine)
 
-    """Return a list of dates and precipitations"""
-    # Query all precipitations
-    results = session.query(Measurement.date,Measurement.prcp).all()
+    results = session.query(Measurement.date,func.sum(Measurement.prcp)).\
+    filter(Measurement.date >= '2016-08-23').\
+    group_by(Measurement.date).all()
 
     session.close()
+    
+    dates_rain = dict(results)
 
-    # Convert list of tuples into normal list
-    all_date_prcp = []
-    for date,precip in results:
-        date_dict = {}
-        date_dict[date] = precip
-        all_date_prcp.append(date_dict)
+    return jsonify(dates_rain)
 
-    return jsonify(all_date_prcp)
-
-
+#display the station IDs
 @app.route("/api/v1.0/stations")
 def stations():
-    # Create our session (link) from Python to the DB
     session = Session(engine)
-
-    """Return a list of stations"""
-    # Query all stations
     results = session.query(Station.station).all()
-
+            
     session.close()
 
-    # Convert list of tuples into normal list
-    all_stations = list(np.ravel(results))
+    station_names = list(np.ravel(results))
 
-    return jsonify(all_stations)
+    return jsonify(station_names)
 
-#query for the dates and temperature observations from a year from the last data point.
+#display the temperature observations of the last year's worth of data for station USC00519281
 @app.route("/api/v1.0/tobs")
-def tobs():
-    # Create our session (link) from Python to the DB
+def observations():
     session = Session(engine)
+    temp_freq = session.query(Measurement.date, Measurement.tobs).\
+        filter(Measurement.date >= '2016-08-23').\
+        filter(Measurement.station == 'USC00519281').all()
 
-    """Return a list of tobs (temperature observations) for the last year of data in the table"""
-    query_date = dt.date(2017, 8, 23) - dt.timedelta(days=365)
-
-    results = session.query(Measurement.tobs).\
-        filter(Measurement.date >= query_date).all()
-        
     session.close()
 
-    # Convert list of tuples into normal list
-    all_tobs = list(np.ravel(results))
-
-    return jsonify(all_tobs)
-
-
-# Create function to validate input as specific date format YYYY-MM-DD
-def validate(date_text):
-    try:
-        dt.datetime.strptime(date_text, '%Y-%m-%d')
-    except ValueError:
-        raise ValueError("Incorrect data format, should be YYYY-MM-DD")
-
-
-# When given the start only, calculate TMIN, TAVG, and TMAX for all dates greater than and equal to the start date.
-@app.route("/api/v1.0/<startDate>")
-def temp_date_end(startDate):
-    """Fetch the TMIN, TAVG and TMAX given a  start/end date
-       variables supplied by the user, or a 404 if not."""
-    
-    if isinstance(startDate,str):
-        print(f"One date passed - Determine agg funcs over date range")
-        validate(startDate)
-        # Create our session (link) from Python to the DB
-        session = Session(engine)
-
-        results = session.query(func.min(Measurement.tobs),\
-                                func.avg(Measurement.tobs),\
-                                func.max(Measurement.tobs)).\
-                                filter(Measurement.date >= startDate).first()
+    return jsonify(temp_freq)
         
-        session.close()
+@app.route("/api/v1.0/<start>")
+def start_date_only(start):
+    search_term = start
+    session = Session(engine)
+    results = session.query(Measurement.date, func.min(Measurement.tobs),func.max(Measurement.tobs), func.avg(Measurement.tobs)).\
+             filter(Measurement.date >= search_term).group_by(Measurement.date).all()
 
-        # Convert list of tuples into normal list
-        temps_agg = list(np.ravel(results))
+    session.close()
+    
+    return jsonify(results)          
 
-        return jsonify(temps_agg)
-    return jsonify({"error": "Dates not found."}), 404
+
+@app.route("/api/v1.0/<start>/<end>")
+def start_end_only(start, end):
+    begin = start
+    end = end
+    session = Session(engine)
+    results = session.query(Measurement.date, func.min(Measurement.tobs),func.max(Measurement.tobs), func.avg(Measurement.tobs)).\
+             filter(Measurement.date.between(begin, end)).group_by(Measurement.date).all()
+    
+    session.close()
+
+    return jsonify(results)
+
+
+if __name__ == "__main__":
+    app.run(debug=True)
