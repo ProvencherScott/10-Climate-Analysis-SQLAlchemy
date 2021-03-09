@@ -12,7 +12,7 @@ The repo consisits of a Jupyter Notebook, main app.py (to establish connection),
 
 ### Precipitation Analysis:
 
-1. Design a query to retrieve the last 12 months of precipitation data. 2 Select only the date and prcp values.
+1. Design a query to retrieve the last 12 months of precipitation data. 2. Select only the date and prcp values.
 
 @app.route("/api/v1.0/precipitation")
 def rain():
@@ -52,6 +52,7 @@ def start_date_only(start):
     session = Session(engine)
     results = session.query(Measurement.date, func.min(Measurement.tobs),func.max(Measurement.tobs), func.avg(Measurement.tobs)).\
          filter(Measurement.date >= search_term).group_by(Measurement.date).all()
+
 
 
 Other imported libraries:
